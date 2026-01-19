@@ -272,40 +272,28 @@ class LungNoduleDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        """
-        Loads a single 3D cube and its label by index.
-
-        Args:
-            idx (int): The index of the item to retrieve.
-
-        Returns:
-            cube (torch.Tensor): A 3D tensor of shape (1, 32, 32, 32).
-            label (torch.Tensor): A scalar tensor containing the label (0 or 1).
-        """
-        # get cube from index (CSV row)
         row = self.df.iloc[idx]
         file_name = row['file']
         is_positive = row['type'] == 'positive'
 
-        # which folder to look in
+        # 1. Load the 3D Cube (The Input)
         folder = self.pos_dir if is_positive else self.neg_dir
-        file_path = os.path.join(folder, file_name)
+        cube_array = np.load(os.path.join(folder, file_name))
+        cube = torch.from_numpy(cube_array).unsqueeze(0).float()
 
-        # load  numpy array
-        # It was saved as (32, 32, 32)
-        # we need to add a "Channel" dimension (how the image "data" is quantified)
-        # PyTorch expects: (Channel, Depth, Height, Width)
-        array = np.load(file_path)
+        # 2. Load the 3D Mask (The Target)
+        if is_positive and row['mask_file']:
+            # Load the actual Nodule Mask saved in NoduleMasks directory
+            mask_path = os.path.join("LungVoxels/NoduleMasks", row['mask_file'])
+            mask_array = np.load(mask_path)
+        else:
+            # For healthy samples, create a blank (zero) mask of the same size
+            mask_array = np.zeros_like(cube_array)
 
-        # unsqueeze(0) turns (32,32,32) into (1,32,32,32)
-        cube = torch.from_numpy(array).unsqueeze(0).float()
+        mask = torch.from_numpy(mask_array).unsqueeze(0).float()
 
-        # extract malignancy label (healthy= 0.0.) 
-        # If it's a nodule, keep the 1-5 rating
-        label_value = float(row['label'])
-        label = torch.tensor(label_value).float()
-
-        return cube, label
+        return cube, mask
+        
 
 import torch
 import torch.nn as nn

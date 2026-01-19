@@ -1,21 +1,47 @@
 import torch
+import os
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from model import UNet3D
 from losses import DiceLoss
-from data_loader import LungNoduleDataset
+from data_loader import NEG_DIR, POS_DIR, LungNoduleDataset
 
-# --- Configuration & MLOps ---
+
+# configuration & MLOps
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BATCH_SIZE = 8  # Optimized for 16GB VRAM
 LEARNING_RATE = 1e-4
 EPOCHS = 20
 
 def train():
-    # 1. Load Dataset using your manifest
-    full_dataset = LungNoduleDataset(csv_file="scan_manifest.csv")
+    # 1. Load the initial manifest
+    full_dataset = LungNoduleDataset(csv_file="./scan_manifest.csv", pos_dir=POS_DIR, neg_dir=NEG_DIR)
     
-    # Split: 80% Train, 20% Validation (Evaluation)
+    # --- START CLEAN-UP CODE ---
+    print(f"Initial manifest size: {len(full_dataset.df)}")
+
+    def file_exists(row):
+        # Determine the correct cube folder
+        folder = POS_DIR if row['type'] == 'positive' else NEG_DIR
+        cube_path = os.path.join(folder, row['file'])
+        
+        # Check if cube exists
+        if not os.path.exists(cube_path):
+            return False
+            
+        # If positive, also check if the mask exists
+        if row['type'] == 'positive':
+            mask_path = os.path.join("LungVoxels/NoduleMasks", str(row['mask_file']))
+            return os.path.exists(mask_path)
+            
+        return True
+
+    # Filter the internal DataFrame of the dataset object
+    full_dataset.df = full_dataset.df[full_dataset.df.apply(file_exists, axis=1)].reset_index(drop=True)
+    print(f"Cleaned manifest size: {len(full_dataset.df)} (Filtered out missing files)")
+    # --- END CLEAN-UP CODE ---
+
+    # 2. train-test-Split (Now uses only validated files)
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_ds, val_ds = random_split(full_dataset, [train_size, val_size])
@@ -23,7 +49,7 @@ def train():
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
 
-    # 2. Initialize Model, Loss, and Optimizer
+    # Initialize Model, Loss, and Optimizer
     model = UNet3D().to(DEVICE)
     criterion = DiceLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -60,6 +86,7 @@ def evaluate_model(model, loader):
     Evaluation function to calculate the Dice Coefficient on unseen data.
     """
     model.eval()
+
     total_dice = 0
     with torch.no_grad():
         for cubes, masks in loader:
@@ -73,4 +100,5 @@ def evaluate_model(model, loader):
     return total_dice / len(loader)
 
 if __name__ == "__main__":
+    print(DEVICE)
     train()

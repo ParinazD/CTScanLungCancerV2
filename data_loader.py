@@ -5,7 +5,6 @@
 folder_path = "./ImagesDICOM/manifest-1600709154662/LIDC-IDRI/LIDC-IDRI-0001/01-01-2000-NA-NA-30178/3000566.000000-NA-03192" 
 
 import numpy as np
-
 # 1. Fix compatability between modern NumPy and older pylidc
 np.int = int
 
@@ -17,38 +16,9 @@ if not hasattr(configparser, 'SafeConfigParser'):
 
 
 import pylidc as pl
+import pylidc as pl
+import pylidc.utils
 import matplotlib.pyplot as plt
-
-# query the database for a specific scan
-# 'LIDC-IDRI-0001' -- first patient in the dataset
-scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == 'LIDC-IDRI-0013').first()
-#84, 
-#import pdb; pdb.set_trace()
-
-# cluster the annotations
-# In LIDC, up to 4 radiologists looked at the same scan.
-# cluster_annotations() groups their individual circles into unique 'physical nodules'.
-nodules = scan.cluster_annotations()
-
-print(f"Patient {scan.patient_id} has {len(nodules)} unique nodules.")
-
-# access the 3D volume (The CT scan pixels converted to HU)
-vol = scan.to_volume() # This is a 3D NumPy array (Z, Y, X)
-
-# explore a specific nodule
-for i, nodule in enumerate(nodules):
-    # 'nodule' is a list of annotations (one from each radiologist)
-    # Let's look at the first radiologist's assessment of this nodule
-    ann = nodule[0]
-
-    print(f"Nodule {i+1} Characteristics:")
-    print(f" - Malignancy: {ann.malignancy} (1=Low, 5=High)")
-    print(f" - Spiculation: {ann.spiculation}")
-
-    # creates an GUI (running locally)
-    #  shows the nodule with arrows and contours.
-    scan.visualize(annotation_groups=nodules)
-    break
 
 # CREATING HEALTHY CUBE AND NODULE CUBES
 
@@ -79,23 +49,23 @@ def generate_mask_patch(scan, cluster, centroid, cube_size=32):
     @params cube_size: (int)  size of the output cube (default 32).
     @returns mask_cube: (np.ndarray) Binary 3D array of shape (32, 32, 32).
     """
-    half_size = cube_size // 2
+    half = cube_size // 2
     z, y, x = centroid
-
-    # 1. Get the consensus mask and its bounding box from pylidc
-    # This combines the opinions of all radiologists into one "truth"
-    cmask, bbox = pl.utils.consensus(cluster, ret_itrs=False)
-
-    # 2. Create a full-volume-sized empty mask (filled with 0s)
-    # Using np.bool8 to save memory before cropping
+    cmask, bbox, _ = pl.utils.consensus(cluster)
+    
     full_mask = np.zeros(scan.to_volume().shape, dtype=np.bool8)
     full_mask[bbox] = cmask
 
-    # 3. Crop the mask using the same centroid as the CT cube
-    mask_patch = full_mask[z-half_size:z+half_size, 
-                           y-half_size:y+half_size, 
-                           x-half_size:x+half_size]
-
+    # Use np.pad or manual boundary checks to ensure exactly cube_size
+    # This creates a "Safety Buffer" around the scan edges
+    padded_mask = np.pad(full_mask, half, mode='constant', constant_values=0)
+    
+    # Adjust coordinates for padding
+    z, y, x = z + half, y + half, x + half
+    
+    mask_patch = padded_mask[z-half:z+half, 
+                             y-half:y+half, 
+                             x-half:x+half]
     return mask_patch.astype(np.float32)
 
 def generate_positive_samples(vol, clusters, cube_size=32):
@@ -110,6 +80,7 @@ def generate_positive_samples(vol, clusters, cube_size=32):
             label = np.mean([ann.malignancy for ann in cluster])
             samples.append((cube, label, centroid))
     return samples
+
 
 def generate_negative_samples(vol, nodules, num_samples=5, cube_size=32):
     half_size = cube_size // 2
@@ -133,91 +104,53 @@ def generate_negative_samples(vol, nodules, num_samples=5, cube_size=32):
                 neg_cubes.append((cube, 0.0, random_center)) # Label 0.0 for healthy
     return neg_cubes
 
-# This ensures pylidc is actually looking at your data before the loop starts
+# pylidc is actually looking at data before the loop starts
+print("GOT HERE____________")
 try:
     print(f"Checking .pylidrc path: {pl.config.get('dicom', 'path')}")
 except:
     print("WARNING: Could not read .pylidrc! pylidc might hang.")
 
 manifest = [] 
-
 for n in range(1, 123):
     patient_id = f"LIDC-IDRI-{n:04d}"
+    
+    scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).first()
+    if not scan: 
+        continue
+
+    # Check for existing data: if this file exists, we skip the heavy volume loading
+    check_file = os.path.join(NEG_DIR, f"pat{n:04d}_neg_0_lab_0.0.npy")
+    if os.path.exists(check_file):
+        print(f"--- Skipping {patient_id}: Already processed ---")
+        continue
+
     print(f"--- Processing {patient_id} ---")
+    vol = scan.to_volume()
+    nodules = scan.cluster_annotations()
 
-    try:
-        scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).first()
-        if not scan: 
-            continue
-
-        # Check for existing data to avoid re-processing
-        check_file = os.path.join(NEG_DIR, f"pat{n:04d}_neg_0_lab_0.0.npy")
-        if os.path.exists(check_file):
-            print(f"--- Skipping {patient_id}: Already processed ---")
-            continue
-
-        # Load volume ONCE per patient
-        vol = scan.to_volume()
-        nodules = scan.cluster_annotations()
-
-        # 1. Generate Positive Samples (and their corresponding Masks)
-        # pos_data should rdeturn (cube, label, center, original_nodule_index)
-        pos_data = generate_positive_samples(vol, nodules, CUBE_SIZE)
-        for i, (cube, label, center) in enumerate(pos_data):
-            # Save the Voxel Cube
-            fname = f"pat{n:04d}_pos_{i}_lab_{label:.1f}.npy"
-            fpath = os.path.join(POS_DIR, fname)
-            np.save(fpath, cube)
-
-            # --- MASK SAVING LOGIC ---
-            # Use the actual nodule index from the cluster to generate the mask
-            # Pass 'scan' and 'vol' to avoid redundant loading inside the function
-            mask = generate_mask_patch(scan, nodules[i], center, CUBE_SIZE)
-            
-            mask_fname = f"pat{n:04d}_mask_{i}.npy"
-            mask_fpath = os.path.join(MASK_DIR, mask_fname)
-            np.save(mask_fpath, mask)
-            # -------------------------
-
-            manifest.append({
-                "patient": patient_id, 
-                "file": fname, 
-                "mask_file": mask_fname, 
-                "label": label, 
-                "type": "positive"
-            })
-
-        # 2. Generate and Save Negative Samples
-        neg_data = generate_negative_samples(vol, nodules, num_samples=5, cube_size=CUBE_SIZE)
+    # Positive Samples & Masks
+    for i, cluster in enumerate(nodules):
+        centroid = np.mean([ann.centroid for ann in cluster], axis=0).astype(int)
+        z, y, x = centroid
+        half = CUBE_SIZE // 2
         
-        for i, (cube, label, center) in enumerate(neg_data):
-            fname = f"pat{n:04d}_neg_{i}_lab_0.0.npy"
-            fpath = os.path.join(NEG_DIR, fname)
-            np.save(fpath, cube)
+        cube = vol[z-half:z+half, y-half:y+half, x-half:x+half]
+        
+        if cube.shape == (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE):
+            label = np.mean([ann.malignancy for ann in cluster])
+            fname = f"pat{n:04d}_pos_{i}_lab_{label:.1f}.npy"
+            np.save(os.path.join(POS_DIR, fname), cube)
 
-            manifest.append({
-                "patient": patient_id, 
-                "file": fname, 
-                "mask_file": None, 
-                "label": 0.0, 
-                "type": "negative"
-            })
+            mask = generate_mask_patch(scan, cluster, centroid, CUBE_SIZE)
+            mask_fname = f"pat{n:04d}_mask_{i}.npy"
+            np.save(os.path.join(MASK_DIR, mask_fname), mask)
 
-    except Exception as e:
-        print(f"Skipping {patient_id} due to error: {e}")
-
-# Save the manifest for easy training later
-df = pd.DataFrame(manifest)
-df.to_csv("scan_manifest.csv", index=False)
-print("Done! All samples saved and scan_manifest.csv created.")
-
-
-# **Feeding raw HU values directly into a Neural Network creates two significant technical hurdles:**
-# 1. *Exploding Gradients:* 'Neural networks are mathematically optimized to process data
-#  in a small, constrained range (typically $[0.0, 1.0]$ or $[-1.0, 1.0]$). Using large, 
-# high-variance integers like $+400$ or $-1000$ can cause "exploding gradients" during 
-# backpropagation, making the model's training unstable or preventing it from converging at all.
-# 2. *Filtering Irrelevant Data:* A CT scan captures the entire density spectrum, from empty air to dense cortical bone. When screening for lung cancer, features like rib bones ($+700$ HU) are irrelevant noise that can distract the model.
+    # Negative Samples
+    neg_data = generate_negative_samples(vol, nodules, num_samples=5, cube_size=CUBE_SIZE)
+    for i, (cube, label, center) in enumerate(neg_data):
+        fname = f"pat{n:04d}_neg_{i}_lab_0.0.npy"
+        np.save(os.path.join(NEG_DIR, fname), cube)
 
 #NORMALIZING CUBES
 
@@ -239,51 +172,67 @@ def normalize_cube(cube):
 
 # --- Define Folder Mappings ---
 # Format: "Input_Folder": "Output_Folder"
+# --- 2. NORMALIZATION LOOP ---
+# This loop scales HU values to [0.0, 1.0] for the Neural Network
 folders_to_process = {
-    "LungVoxels/NoduleVoxel": "LungVoxels/NoduleVoxel_normalized",
-    "LungVoxels/HealthyVoxelData": "LungVoxels/HealthyVoxelData_normalized"
+    POS_DIR: os.path.join(BASE_DIR, "NoduleVoxel_normalized"),
+    NEG_DIR: os.path.join(BASE_DIR, "HealthyVoxelData_normalized")
 }
 
-
 for input_dir, output_dir in folders_to_process.items():
-
-    # Setup Directories
     os.makedirs(output_dir, exist_ok=True)
     file_paths = glob.glob(os.path.join(input_dir, "*.npy"))
+    print(f"Normalizing {len(file_paths)} files in {input_dir}...")
 
-    print(f"\n--- Processing Folder: {input_dir} ---")
-    print(f"Found {len(file_paths)} files. Saving to: {output_dir}")
-
-    # Loop through every file in the current folder
     for path in file_paths:
         file_name = os.path.basename(path)
         save_path = os.path.join(output_dir, file_name)
-
-        # Skip if already exists to save time
-        if os.path.exists(save_path):
-            continue
-        try:
-            # Load, Normalize, and Save
+        if not os.path.exists(save_path):
             raw_cube = np.load(path)
             norm_cube = normalize_cube(raw_cube)
             np.save(save_path, norm_cube)
-        except Exception as e:
-            print(f"Error processing {file_name}: {e}")
-
-    print(f"Finished normalizing {input_dir}!")
 
 # Final Verification 
-print("\n--- Running Final Verification ---")
-for _, output_dir in folders_to_process.items():
-    test_files = os.listdir(output_dir)
-    if test_files:
-        sample_path = os.path.join(output_dir, test_files[0])
-        sample = np.load(sample_path)
-        print(f"Folder: {output_dir}")
-        print(f"  - Sample: {test_files[0]}")
-        print(f"  - Range: [{sample.min()}, {sample.max()}]")
-        print(f"  - Dtype: {sample.dtype}")
+print("\n--- Generating Final Manifest ---")
+final_manifest = []
 
+# Crawl Positive Normalized folder
+norm_pos_dir = folders_to_process[POS_DIR]
+for fname in os.listdir(norm_pos_dir):
+    if fname.endswith(".npy"):
+        # Extract patient num and index from fname: pat0001_pos_0_lab_3.0.npy
+        parts = fname.split("_")
+        pat_id = f"LIDC-IDRI-{parts[0].replace('pat', '')}"
+        idx = parts[2]
+        label = float(parts[4].replace(".npy", ""))
+        mask_fname = f"{parts[0]}_mask_{idx}.npy"
+        
+        final_manifest.append({
+            "patient": pat_id,
+            "file": fname,
+            "mask_file": mask_fname,
+            "label": label,
+            "type": "positive"
+        })
+
+# Crawl Negative Normalized folder
+norm_neg_dir = folders_to_process[NEG_DIR]
+for fname in os.listdir(norm_neg_dir):
+    if fname.endswith(".npy"):
+        parts = fname.split("_")
+        pat_id = f"LIDC-IDRI-{parts[0].replace('pat', '')}"
+        
+        final_manifest.append({
+            "patient": pat_id,
+            "file": fname,
+            "mask_file": None,
+            "label": 0.0,
+            "type": "negative"
+        })
+
+df = pd.DataFrame(final_manifest)
+df.to_csv("scan_manifest.csv", index=False)
+print(f"Success! scan_manifest.csv created with {len(df)} entries.")
 
 import torch
 import pandas as pd
@@ -358,12 +307,11 @@ class LungNoduleDataset(Dataset):
 
         return cube, label
 
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as F 
 
-class NoduleRegressionModel3D(nn.Module):
+class NoduleRegressionModel3D(nn.Module): 
     """
     A 3D CNN designed to predict the malignancy 
     severity score (0.0 to 5.0) of a lung volume patch.
@@ -394,7 +342,7 @@ class NoduleRegressionModel3D(nn.Module):
         self.pool = nn.MaxPool3d(kernel_size=2, stride=2) #translation invariant
 
         # input size: 128 channels * (4 * 4 * 4 voxels) = 8192
-        self.fc1 = nn.Linear(128 * 4 * 4 * 4, 256)
+        self.fc1 = nn.linear(128 * 4 * 4 * 4, 256)
         self.dropout = nn.Dropout(p=0.3) # PRevents overfitting by randomly 'dropping off' neurons
         self.fc2 = nn.Linear(256, 1)    # Final output: A single continuous value (the score)
 

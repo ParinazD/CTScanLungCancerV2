@@ -68,6 +68,7 @@ class UNet3D(nn.Module):
         d1 = self.up1(d2)
         d1 = torch.cat([d1, e1], dim=1) # The "Skip Connection"
         d1 = self.dec1(d1)
-
-        return self.final(d1)
-
+        
+        # Pass the final decoder output (d1) to the final layer
+        logits = self.final(d1)
+        return logits

@@ -5,10 +5,10 @@ from torch.utils.data import DataLoader, random_split
 from model import UNet3D
 from losses import DiceLoss
 from data_loader import NEG_DIR, POS_DIR, LungNoduleDataset
-
+import torch.nn as nn
 
 # configuration & MLOps
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")
 BATCH_SIZE = 8  # Optimized for 16GB VRAM
 LEARNING_RATE = 1e-4
 EPOCHS = 20
@@ -24,7 +24,7 @@ def train():
         # Determine the correct cube folder
         folder = POS_DIR if row['type'] == 'positive' else NEG_DIR
         cube_path = os.path.join(folder, row['file'])
-        
+
         # Check if cube exists
         if not os.path.exists(cube_path):
             return False
@@ -51,7 +51,8 @@ def train():
 
     # Initialize Model, Loss, and Optimizer
     model = UNet3D().to(DEVICE)
-    criterion = DiceLoss()
+    criterion_dice = DiceLoss()
+    criterion_bce = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     print(f"Starting training on {DEVICE}...")
@@ -65,7 +66,7 @@ def train():
 
             optimizer.zero_grad()
             outputs = model(cubes)
-            loss = criterion(outputs, masks)
+            loss = 0.5 * criterion_bce(outputs, masks) + 0.5 * criterion_dice(outputs, masks)
             loss.backward()
             optimizer.step()
             
@@ -82,19 +83,23 @@ def train():
         torch.save(model.state_dict(), "best_model.pth")
 
 def evaluate_model(model, loader):
-    """
-    Evaluation function to calculate the Dice Coefficient on unseen data.
-    """
+   
     model.eval()
-
     total_dice = 0
+    smooth = 1e-6
+
     with torch.no_grad():
         for cubes, masks in loader:
             cubes, masks = cubes.to(DEVICE), masks.to(DEVICE)
             preds = model(cubes)
             
-            # Use 1 - DiceLoss to get the actual Dice Coefficient
-            dice_score = 1 - DiceLoss()(preds, masks)
+            # Flatten tensors to calculate overlap across the whole batch
+            preds_f = preds.view(-1)
+            masks_f = masks.view(-1)
+            
+            intersection = (preds_f * masks_f).sum()
+            dice_score = (2. * intersection + smooth) / (preds_f.sum() + masks_f.sum() + smooth)
+            
             total_dice += dice_score.item()
             
     return total_dice / len(loader)

@@ -17,7 +17,7 @@ class DiceLoss(nn.Module):
         return 1 - dice
     
 class WeightedDiceLoss(nn.Module):
-    def __init__(self, smooth=1e-6, weight=10.0):
+    def __init__(self, smooth=1e-6, weight=100.0):
         super(WeightedDiceLoss, self).__init__()
         self.smooth = smooth
         self.weight = weight

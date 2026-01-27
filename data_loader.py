@@ -250,7 +250,7 @@ class LungNoduleDataset(Dataset):
         neg_dir (str)
     """
 
-    def __init__(self, csv_file, pos_dir, neg_dir):
+    def __init__(self, csv_file, pos_dir, neg_dir, train=True):
         """
         Initializes the dataset.
 
@@ -262,6 +262,7 @@ class LungNoduleDataset(Dataset):
         self.df = pd.read_csv(csv_file)
         self.pos_dir = pos_dir
         self.neg_dir = neg_dir
+        self.train = train # New flag
 
     def __len__(self):
         """
@@ -279,7 +280,6 @@ class LungNoduleDataset(Dataset):
         # 1. Load the 3D Cube (The Input)
         folder = self.pos_dir if is_positive else self.neg_dir
         cube_array = np.load(os.path.join(folder, file_name))
-        cube = torch.from_numpy(cube_array).unsqueeze(0).float()
 
         # 2. Load the 3D Mask (The Target)
         if is_positive and row['mask_file']:
@@ -287,9 +287,28 @@ class LungNoduleDataset(Dataset):
             mask_path = os.path.join("LungVoxels/NoduleMasks", row['mask_file'])
             mask_array = np.load(mask_path)
         else:
-            # For healthy samples, create a blank (zero) mask of the same size
+            # For healthy samples, create a blank (zero) mask
             mask_array = np.zeros_like(cube_array)
 
+        # --- 3D DATA AUGMENTATION ---
+        # Only apply during training to help the model generalize
+        if self.train:
+            # Randomly flip along the Z, Y, or X axis
+            for axis in [0, 1, 2]:
+                if random.random() > 0.5:
+                    cube_array = np.flip(cube_array, axis=axis).copy()
+                    mask_array = np.flip(mask_array, axis=axis).copy()
+            
+            # Random 90-degree rotations
+            if random.random() > 0.5:
+                k = random.randint(1, 3) # Number of 90-degree rotations
+                axes = random.sample([0, 1, 2], 2) # Pick two random axes for rotation
+                cube_array = np.rot90(cube_array, k, axes).copy()
+                mask_array = np.rot90(mask_array, k, axes).copy()
+
+        # Convert to PyTorch Tensors
+        # unsqueeze(0) adds the 'Channel' dimension: (1, 32, 32, 32)
+        cube = torch.from_numpy(cube_array).unsqueeze(0).float()
         mask = torch.from_numpy(mask_array).unsqueeze(0).float()
 
         return cube, mask

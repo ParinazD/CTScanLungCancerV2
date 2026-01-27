@@ -9,7 +9,7 @@ import numpy as np
 
 #local imports
 from model import UNet3D
-from losses import DiceLoss
+from losses import DiceLoss, WeightedDiceLoss, UnifiedFocalLoss
 from data_loader import NEG_DIR, POS_DIR, LungNoduleDataset
 
 
@@ -69,8 +69,7 @@ def train():
 
     # Initialize Model, Loss, and Optimizer
     model = UNet3D().to(DEVICE)
-    criterion_dice = DiceLoss()
-    criterion_bce = nn.BCELoss()
+    criterion = UnifiedFocalLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     print(f"Starting training on {DEVICE}...")
@@ -84,7 +83,7 @@ def train():
 
             optimizer.zero_grad()
             outputs = model(cubes)
-            loss = 0.5 * criterion_bce(outputs, masks) + 0.5 * criterion_dice(outputs, masks)
+            loss = criterion(outputs, masks)
             loss.backward()
             optimizer.step()
             

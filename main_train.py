@@ -59,6 +59,7 @@ def train():
     np.random.shuffle(indices)
     train_indices = indices[:train_size]
     val_indices = indices[train_size:]
+    
 
     # Create subsets using the separate dataset objects
     train_ds = torch.utils.data.Subset(train_dataset, train_indices)
@@ -70,10 +71,13 @@ def train():
     # Initialize Model, Loss, and Optimizer
     model = UNet3D().to(DEVICE)
     criterion = UnifiedFocalLoss()
+
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
     print(f"Starting training on {DEVICE}...")
-
+    # Save Checkpoint (MLOps)
+    best_val_dice = 0.0
     for epoch in range(EPOCHS):
         model.train()
         train_loss = 0
@@ -93,11 +97,18 @@ def train():
         
         # Validation Step (Evaluation)
         val_dice = evaluate_model(model, val_loader)
+
+        scheduler.step(avg_train_loss)
         
         print(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {avg_train_loss:.4f} - Val Dice: {val_dice:.4f}")
 
-        # Save Checkpoint (MLOps)
-        torch.save(model.state_dict(), "model_with_augmentation.pth")
+
+
+        # Inside loop:
+        if val_dice > best_val_dice:
+            best_val_dice = val_dice
+            torch.save(model.state_dict(), "best_nodule_model.pth")
+            print(f"--- Model Improved! Saved to best_nodule_model.pth ---")
 
 def evaluate_model(model, loader):
    

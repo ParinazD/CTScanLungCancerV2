@@ -4,6 +4,7 @@
 
 folder_path = "./ImagesDICOM/manifest-1600709154662/LIDC-IDRI/LIDC-IDRI-0001/01-01-2000-NA-NA-30178/3000566.000000-NA-03192" 
 
+import random
 import numpy as np
 # 1. Fix compatability between modern NumPy and older pylidc
 np.int = int
@@ -349,7 +350,7 @@ class NoduleRegressionModel3D(nn.Module):
         self.pool = nn.MaxPool3d(kernel_size=2, stride=2) #translation invariant
 
         # input size: 128 channels * (4 * 4 * 4 voxels) = 8192
-        self.fc1 = nn.linear(128 * 4 * 4 * 4, 256)
+        self.fc1 = nn.Linear(128 * 4 * 4 * 4, 256)
         self.dropout = nn.Dropout(p=0.3) # PRevents overfitting by randomly 'dropping off' neurons
         self.fc2 = nn.Linear(256, 1)    # Final output: A single continuous value (the score)
 

@@ -1,4 +1,6 @@
 #IMPORTS 
+from pyexpat import model
+
 import torch
 import os
 import torch.optim as optim
@@ -11,6 +13,9 @@ import numpy as np
 from model import UNet3D
 from losses import DiceLoss, WeightedDiceLoss, UnifiedFocalLoss
 from data_loader import NEG_DIR, POS_DIR, LungNoduleDataset
+
+import torch.optim.lr_scheduler as lr_scheduler
+from visualization import visualize_radiology_heatmap
 
 
 # configuration & MLOps
@@ -68,12 +73,16 @@ def train():
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
 
-    # Initialize Model, Loss, and Optimizer
+   # Initialize Model
     model = UNet3D().to(DEVICE)
-    criterion = UnifiedFocalLoss()
+    
+    # LOSS REDESIGN: 
+    #  prioritize Dice (overlap) over BCE (pixel-accuracy) -- forces model to care about the tiny nodules.
+    criterion_dice = DiceLoss() 
+    criterion_bce = nn.BCELoss()
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
 
     print(f"Starting training on {DEVICE}...")
     # Save Checkpoint (MLOps)
@@ -87,31 +96,38 @@ def train():
 
             optimizer.zero_grad()
             outputs = model(cubes)
-            loss = criterion(outputs, masks)
+            
+            # WEIGHTED LOSS: 
+            # Give the Dice loss more (0.7) than the BCE (0.3)
+            # for extreme class imbalance in 3D lung scans.
+            loss = 0.3 * criterion_bce(outputs, masks) + 0.7 * criterion_dice(outputs, masks)
+            
             loss.backward()
             optimizer.step()
-            
             train_loss += loss.item()
 
         avg_train_loss = train_loss / len(train_loader)
         
-        # Validation Step (Evaluation)
-        val_dice = evaluate_model(model, val_loader)
-
+        # Step the scheduler based on training loss
         scheduler.step(avg_train_loss)
+        
+        # Evaluation
+        # We only visualize on the best/last epoch to save time
+        is_last_epoch = (epoch == EPOCHS - 1)
+        val_dice = evaluate_model(model, val_loader, visualize=is_last_epoch)
         
         print(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {avg_train_loss:.4f} - Val Dice: {val_dice:.4f}")
 
-
-
-        # Inside loop:
-        if val_dice > best_val_dice:
-            best_val_dice = val_dice
+        # Checkpoint if Dice improved (MLOps best practice)
+        if val_dice > 0.0002:
             torch.save(model.state_dict(), "best_nodule_model.pth")
-            print(f"--- Model Improved! Saved to best_nodule_model.pth ---")
+            print("--- Significant Improvement! Model Saved ---")
 
-def evaluate_model(model, loader):
-   
+def evaluate_model(model, loader, visualize):
+    """
+    Evaluates the model using the Dice Coefficient and optionally 
+    generates a radiology heatmap visualization.
+    """
     model.eval()
     total_dice = 0
     smooth = 1e-6
@@ -129,6 +145,23 @@ def evaluate_model(model, loader):
             dice_score = (2. * intersection + smooth) / (preds_f.sum() + masks_f.sum() + smooth)
             
             total_dice += dice_score.item()
+
+    if visualize:
+        with torch.no_grad():
+            # Grab the first sample from the final batch of the loader
+            # PyTorch Shape: [Batch, Channel, Depth, Height, Width] -> [1, 1, 32, 32, 32]
+            sample_cube = cubes[0:1] 
+            prediction = model(sample_cube)
+            
+            # Convert to Numpy and fix dimensions for Matplotlib
+            # We need (Depth, Height, Width) for the visualizer to slice correctly
+            # .cpu() ensures it works even if you move to GPU later
+            ct_numpy = sample_cube[0, 0].cpu().numpy()     # Shape: (32, 32, 32)
+            pred_numpy = prediction[0, 0].detach().cpu().numpy() # Shape: (32, 32, 32)
+
+            print("\n--- Generating Radiology Heatmap Slice ---")
+            # We call the visualizer; it will handle taking a specific slice (like index 16)
+            visualize_radiology_heatmap(ct_numpy, pred_numpy, slice_idx=16)
             
     return total_dice / len(loader)
 

@@ -11,7 +11,7 @@ import numpy as np
 
 #local imports
 from model import UNet3D
-from losses import DiceLoss
+from losses import DiceLoss, WeightedDiceLoss, UnifiedFocalLoss
 from data_loader import NEG_DIR, POS_DIR, LungNoduleDataset
 
 import torch.optim.lr_scheduler as lr_scheduler
@@ -64,6 +64,7 @@ def train():
     np.random.shuffle(indices)
     train_indices = indices[:train_size]
     val_indices = indices[train_size:]
+    
 
     # Create subsets using the separate dataset objects
     train_ds = torch.utils.data.Subset(train_dataset, train_indices)
@@ -84,7 +85,8 @@ def train():
     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
 
     print(f"Starting training on {DEVICE}...")
-
+    # Save Checkpoint (MLOps)
+    best_val_dice = 0.0
     for epoch in range(EPOCHS):
         model.train()
         train_loss = 0

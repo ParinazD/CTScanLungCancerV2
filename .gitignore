@@ -4,3 +4,4 @@ nodule_cubes_normalized/
 __pycache__/
 .DS_Store
 testing.py
+.pth

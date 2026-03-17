@@ -82,6 +82,10 @@ def train():
         model.train()
         train_loss = 0
         
+        if epoch < 2:
+            for g in optimizer.param_groups:
+                g['lr'] = LEARNING_RATE * 0.1 # Start at 1e-5 then move to 1e-4
+
         for cubes, masks in train_loader:
             cubes, masks = cubes.to(DEVICE), masks.to(DEVICE)
 

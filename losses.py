@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth=1.0): # Increase smooth from 1e-6 to 1.0
+    def __init__(self, smooth=1.0):
         super(DiceLoss, self).__init__()
         self.smooth = smooth
 
@@ -10,7 +10,10 @@ class DiceLoss(nn.Module):
         preds = preds.view(-1)
         targets = targets.view(-1)
         intersection = (preds * targets).sum()
-        return 1 - ((2. * intersection + self.smooth) / (preds.sum() + targets.sum() + self.smooth))
+        dice = (2. * intersection + self.smooth) / (preds.sum() + targets.sum() + self.smooth)
+        
+        # Log-Cos transformation makes the gradient much stronger
+        return torch.log(torch.cosh(1 - dice))
 
 class WeightedDiceLoss(nn.Module):
     def __init__(self, smooth=1e-6, weight=100.0):

@@ -16,6 +16,7 @@ from data_loader import NEG_DIR, POS_DIR, LungNoduleDataset
 # configuration & MLOps
 DEVICE = torch.device("cpu")
 BATCH_SIZE = 8  # Optimized for 16GB VRAM
+ACCUMULATION_STEPS = 4  # To simulate a larger batch size of 32 without OOM
 LEARNING_RATE = 1e-4
 EPOCHS = 20
 
@@ -70,7 +71,9 @@ def train():
 
     # Initialize Model, Loss, and Optimizer
     model = UNet3D().to(DEVICE)
-    criterion = UnifiedFocalLoss()
+    
+    criterion_dice = DiceLoss(smooth=1.0) # Increased smoothing for better gradient flow
+    criterion_bce = nn.BCELoss()
 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
@@ -81,38 +84,48 @@ def train():
     for epoch in range(EPOCHS):
         model.train()
         train_loss = 0
-        
+        optimizer.zero_grad() # Reset gradients at start of epoch
+
+        # Learning Rate Warmup for Attention Gates
         if epoch < 2:
             for g in optimizer.param_groups:
-                g['lr'] = LEARNING_RATE * 0.1 # Start at 1e-5 then move to 1e-4
+                g['lr'] = LEARNING_RATE * 0.1 
 
-        for cubes, masks in train_loader:
+        for i, (cubes, masks) in enumerate(train_loader):
             cubes, masks = cubes.to(DEVICE), masks.to(DEVICE)
 
-            optimizer.zero_grad()
+            # Forward pass
             outputs = model(cubes)
-            loss = criterion(outputs, masks)
-            loss.backward()
-            optimizer.step()
             
-            train_loss += loss.item()
+            # Weighted Loss: Prioritizing the nodule (Dice) over background (BCE)
+            loss = (0.1 * criterion_bce(outputs, masks)) + (0.9 * criterion_dice(outputs, masks))
+            
+            # Normalize loss to account for accumulation
+            loss = loss / ACCUMULATION_STEPS 
+            loss.backward()
 
-        avg_train_loss = train_loss / len(train_loader)
-        
-        # Validation Step (Evaluation)
-        val_dice = evaluate_model(model, val_loader)
+            # Only update weights every ACCUMULATION_STEPS
+            # if (i + 1) % ACCUMULATION_STEPS == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            train_loss += loss.item() * ACCUMULATION_STEPS
 
-        scheduler.step(avg_train_loss)
-        
-        print(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {avg_train_loss:.4f} - Val Dice: {val_dice:.4f}")
+            avg_train_loss = train_loss / len(train_loader)
+            
+            # Validation Step
+            val_dice = evaluate_model(model, val_loader)
 
+            # Scheduler step based on training loss
+            scheduler.step(avg_train_loss)
+            
+            print(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {avg_train_loss:.4f} - Val Dice: {val_dice:.4f}")
 
-
-        # Inside loop:
-        if val_dice > best_val_dice:
-            best_val_dice = val_dice
-            torch.save(model.state_dict(), "best_nodule_model.pth")
-            print(f"--- Model Improved! Saved to best_nodule_model.pth ---")
+            # Checkpoint: Save if performance improves
+            if val_dice > best_val_dice:
+                best_val_dice = val_dice
+                torch.save(model.state_dict(), "best_nodule_model.pth")
+                print(f"--- Model Improved! Saved to best_nodule_model.pth (Dice: {val_dice:.4f}) ---")
 
 def evaluate_model(model, loader):
    

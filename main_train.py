@@ -56,17 +56,30 @@ def train():
     indices = list(range(len(valid_df)))
     train_size = int(0.8 * len(valid_df))
     
-    # Manually split indices to ensure no overlap
     np.random.shuffle(indices)
     train_indices = indices[:train_size]
     val_indices = indices[train_size:]
-    
 
-    # Create subsets using the separate dataset objects
+    # Create Subset
     train_ds = torch.utils.data.Subset(train_dataset, train_indices)
     val_ds = torch.utils.data.Subset(val_dataset, val_indices)
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    # --- CORRECTED BALANCED SAMPLING ---
+    # We must pull types ONLY for the samples actually in train_indices
+    train_df_subset = valid_df.iloc[train_indices]
+    
+    # Assign weights: 10.0 for nodules to really force the model to learn them
+    weights = [10.0 if t == 'positive' else 1.0 for t in train_df_subset['type']]
+    
+    # num_samples MUST match the length of our weights list
+    sampler = torch.utils.data.WeightedRandomSampler(
+        weights=weights, 
+        num_samples=len(weights), 
+        replacement=True
+    )
+
+    # shuffle=False is REQUIRED when using a sampler
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, sampler=sampler, shuffle=False)
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
 
     # Initialize Model, Loss, and Optimizer

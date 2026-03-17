@@ -2,20 +2,16 @@ import torch
 import torch.nn as nn
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth=1e-6):
+    def __init__(self, smooth=1.0): # Increase smooth from 1e-6 to 1.0
         super(DiceLoss, self).__init__()
         self.smooth = smooth
 
-    def forward(self, predict, target):
-        # Flatten both tensors to (Batch, -1) to calculate intersection per cube
-        predict = predict.view(-1)
-        target = target.view(-1)
-        
-        intersection = (predict * target).sum()
-        dice = (2. * intersection + self.smooth) / (predict.sum() + target.sum() + self.smooth)
-        
-        return 1 - dice
-    
+    def forward(self, preds, targets):
+        preds = preds.view(-1)
+        targets = targets.view(-1)
+        intersection = (preds * targets).sum()
+        return 1 - ((2. * intersection + self.smooth) / (preds.sum() + targets.sum() + self.smooth))
+
 class WeightedDiceLoss(nn.Module):
     def __init__(self, smooth=1e-6, weight=100.0):
         super(WeightedDiceLoss, self).__init__()

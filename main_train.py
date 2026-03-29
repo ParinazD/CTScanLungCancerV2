@@ -25,7 +25,7 @@ MASK_DIR = "LungVoxels/NoduleMasks"
 def dice_metric(preds: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5) -> float:
     """
     Hard Dice computed after binarising predictions at `threshold`.
-    Use this for evaluation; do NOT use as a training loss.
+    Use this for evaluation; not for training loss.
     """
     preds_bin = (preds > threshold).float()
     smooth = 1e-6

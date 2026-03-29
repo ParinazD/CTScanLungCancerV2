@@ -21,7 +21,7 @@ EPOCHS = 50
 MASK_DIR = "LungVoxels/NoduleMasks"
 
 
-# ── Dice metric (threshold-based, used for evaluation only) 
+# ── Dice metric (threshold-based, used for evaluation only)
 def dice_metric(preds: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5) -> float:
     """
     Hard Dice computed after binarising predictions at `threshold`.
@@ -54,7 +54,7 @@ def evaluate_model(model: nn.Module, loader: DataLoader) -> float:
 # ── Training loop
 def train():
 
-    # ── 1. Load & clean manifest 
+    # ── 1. Load & clean manifest
     base_dataset = LungNoduleDataset(
         csv_file="./scan_manifest.csv",
         pos_dir=POS_DIR,
@@ -77,7 +77,7 @@ def train():
     )
     print(f"Cleaned manifest size: {len(valid_df)} (removed missing files)")
 
-    # ── 2. Train / val split 
+    # ── 2. Train / val split
     indices = np.random.permutation(len(valid_df)).tolist()
     train_size = int(0.8 * len(valid_df))
     train_indices = indices[:train_size]
@@ -93,7 +93,7 @@ def train():
     train_ds = torch.utils.data.Subset(train_dataset, train_indices)
     val_ds   = torch.utils.data.Subset(val_dataset,   val_indices)
 
-    # ── 3. Balanced sampler (10× weight for positive samples) 
+    # ── 3. Balanced sampler (10× weight for positive samples)
     train_types = valid_df.iloc[train_indices]["type"].tolist()
     weights = [10.0 if t == "positive" else 1.0 for t in train_types]
     sampler = torch.utils.data.WeightedRandomSampler(
@@ -111,15 +111,13 @@ def train():
     model = UNet3D().to(DEVICE)
 
     # UnifiedFocalLoss handles the ~0.1% foreground imbalance best.
-    # DiceLoss / BCELoss are kept as a lighter fallback combo below but
-    # UnifiedFocalLoss alone is the recommended single criterion.
     criterion = UnifiedFocalLoss(gamma=2.0, lambda_focal=0.5, smooth=1e-6)
 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
 
     # Reduce LR when val Dice stops improving (mode='max')
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode="max", factor=0.5, patience=4)
+        optimizer, mode="max", factor=0.5, patience=4)
 
     # ── 5. Epoch loop
     best_val_dice = 0.0
@@ -138,17 +136,16 @@ def train():
         train_loss = 0.0
         optimizer.zero_grad()
 
-        
         for i, (cubes, masks) in enumerate(train_loader):
             cubes, masks = cubes.to(DEVICE), masks.to(DEVICE)
 
             outputs = model(cubes)                  # (B, 1, 32, 32, 32) ∈ [0, 1]
 
-            # FIX: loss is divided by ACCUMULATION_STEPS so gradients scale correctly
+            # Loss divided by ACCUMULATION_STEPS so gradients scale correctly
             loss = criterion(outputs, masks) / ACCUMULATION_STEPS
             loss.backward()
 
-            # FIX: step + zero_grad only every ACCUMULATION_STEPS batches
+            # Step + zero_grad only every ACCUMULATION_STEPS batches
             if (i + 1) % ACCUMULATION_STEPS == 0 or (i + 1) == len(train_loader):
                 optimizer.step()
                 optimizer.zero_grad()
@@ -157,7 +154,7 @@ def train():
 
         avg_train_loss = train_loss / len(train_loader)
 
-        # ── Validation (once per epoch, outside batch loop) 
+        # ── Validation (once per epoch, outside batch loop)
         val_dice = evaluate_model(model, val_loader)
 
         # Scheduler steps on val Dice (higher = better)

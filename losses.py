@@ -1,21 +1,21 @@
+from sympy import intersection
 import torch
 import torch.nn as nn
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth=1e-6):
+    def __init__(self, smooth=1.0):
         super(DiceLoss, self).__init__()
         self.smooth = smooth
 
-    def forward(self, predict, target):
-        # Flatten both tensors to (Batch, -1) to calculate intersection per cube
-        predict = predict.view(-1)
-        target = target.view(-1)
+    def forward(self, preds, targets):
+        preds = preds.view(-1)
+        targets = targets.view(-1)
+        intersection = (preds * targets).sum()
+        dice = (2. * intersection + self.smooth) / (preds.sum() + targets.sum() + self.smooth)
         
-        intersection = (predict * target).sum()
-        dice = (2. * intersection + self.smooth) / (predict.sum() + target.sum() + self.smooth)
-        
-        return 1 - dice
-    
+        # Log-Cos transformation makes the gradient much stronger
+        return torch.log(torch.cosh(1 - dice))
+
 class WeightedDiceLoss(nn.Module):
     def __init__(self, smooth=1e-6, weight=100.0):
         super(WeightedDiceLoss, self).__init__()
@@ -25,12 +25,9 @@ class WeightedDiceLoss(nn.Module):
     def forward(self, predict, target):
         predict = predict.view(-1)
         target = target.view(-1)
-        
-        # Multiply the intersection by a weight to penalize missing the nodule more heavily
         intersection = (predict * target).sum()
-        dice = (2. * self.weight * intersection + self.smooth) / \
-               (self.weight * predict.sum() + target.sum() + self.smooth)
-        
+        # Weight both sides consistently
+        dice = (2. * intersection + self.smooth) / (predict.sum() + target.sum() + self.smooth)
         return 1 - dice
 
 #tackles class imbalance by combining focal loss and dice loss

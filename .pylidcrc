@@ -1,0 +1,3 @@
+[dicom]
+path = /Users/pdastur/code/LIDC-IRI_Dataset/manifest-1600709154662/LIDC-IDRI
+warn = True

@@ -53,6 +53,7 @@ def evaluate_model(model: nn.Module, loader: DataLoader) -> float:
 
 # ── Training loop
 def train():
+    np.random.seed(42)
 
     # ── 1. Load & clean manifest
     base_dataset = LungNoduleDataset(

@@ -57,6 +57,7 @@ LIDC-IDRI-0039,pat0039_pos_1_lab_1.5.npy,pat0039_mask_1.npy,1.5,positive
 LIDC-IDRI-0033,pat0033_pos_0_lab_3.0.npy,pat0033_mask_0.npy,3.0,positive
 LIDC-IDRI-0078,pat0078_pos_3_lab_4.2.npy,pat0078_mask_3.npy,4.2,positive
 LIDC-IDRI-0111,pat0111_pos_0_lab_2.8.npy,pat0111_mask_0.npy,2.8,positive
+LIDC-IDRI-0121,pat0121_pos_1_lab_3.2.npy,pat0121_mask_1.npy,3.2,positive
 LIDC-IDRI-0042,pat0042_pos_1_lab_3.0.npy,pat0042_mask_1.npy,3.0,positive
 LIDC-IDRI-0016,pat0016_pos_2_lab_3.0.npy,pat0016_mask_2.npy,3.0,positive
 LIDC-IDRI-0030,pat0030_pos_0_lab_2.5.npy,pat0030_mask_0.npy,2.5,positive
@@ -105,7 +106,6 @@ LIDC-IDRI-0005,pat0005_pos_1_lab_2.8.npy,pat0005_mask_1.npy,2.8,positive
 LIDC-IDRI-0004,pat0004_pos_0_lab_1.2.npy,pat0004_mask_0.npy,1.2,positive
 LIDC-IDRI-0010,pat0010_pos_2_lab_3.2.npy,pat0010_mask_2.npy,3.2,positive
 LIDC-IDRI-0084,pat0084_pos_5_lab_2.7.npy,pat0084_mask_5.npy,2.7,positive
-LIDC-IDRI-0122,pat0122_pos_16_lab_2.8.npy,pat0122_mask_16.npy,2.8,positive
 LIDC-IDRI-0049,pat0049_pos_0_lab_2.5.npy,pat0049_mask_0.npy,2.5,positive
 LIDC-IDRI-0118,pat0118_pos_0_lab_1.2.npy,pat0118_mask_0.npy,1.2,positive
 LIDC-IDRI-0066,pat0066_pos_0_lab_3.5.npy,pat0066_mask_0.npy,3.5,positive
@@ -227,7 +227,6 @@ LIDC-IDRI-0115,pat0115_pos_0_lab_3.5.npy,pat0115_mask_0.npy,3.5,positive
 LIDC-IDRI-0056,pat0056_pos_1_lab_2.3.npy,pat0056_mask_1.npy,2.3,positive
 LIDC-IDRI-0012,pat0012_pos_9_lab_2.7.npy,pat0012_mask_9.npy,2.7,positive
 LIDC-IDRI-0044,pat0044_pos_0_lab_2.0.npy,pat0044_mask_0.npy,2.0,positive
-LIDC-IDRI-0121,pat0121_pos_10_lab_3.2.npy,pat0121_mask_10.npy,3.2,positive
 LIDC-IDRI-0049,pat0049_pos_2_lab_2.0.npy,pat0049_mask_2.npy,2.0,positive
 LIDC-IDRI-0022,pat0022_pos_0_lab_2.0.npy,pat0022_mask_0.npy,2.0,positive
 LIDC-IDRI-0049,pat0049_pos_1_lab_1.5.npy,pat0049_mask_1.npy,1.5,positive
@@ -317,7 +316,6 @@ LIDC-IDRI-0049,pat0049_pos_10_lab_2.5.npy,pat0049_mask_10.npy,2.5,positive
 LIDC-IDRI-0047,pat0047_pos_0_lab_4.2.npy,pat0047_mask_0.npy,4.2,positive
 LIDC-IDRI-0048,pat0048_pos_2_lab_3.7.npy,pat0048_mask_2.npy,3.7,positive
 LIDC-IDRI-0099,pat0099_pos_1_lab_4.0.npy,pat0099_mask_1.npy,4.0,positive
-LIDC-IDRI-0121,pat0121_pos_9_lab_4.0.npy,pat0121_mask_9.npy,4.0,positive
 LIDC-IDRI-0055,pat0055_pos_2_lab_3.0.npy,pat0055_mask_2.npy,3.0,positive
 LIDC-IDRI-0046,pat0046_pos_5_lab_2.7.npy,pat0046_mask_5.npy,2.7,positive
 LIDC-IDRI-0027,pat0027_pos_3_lab_2.5.npy,pat0027_mask_3.npy,2.5,positive

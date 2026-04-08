@@ -54,7 +54,7 @@ def generate_mask_patch(scan, cluster, centroid, cube_size=32):
     z, y, x = centroid
     cmask, bbox, _ = pl.utils.consensus(cluster)
     
-    full_mask = np.zeros(scan.to_volume().shape, dtype=np.bool8)
+    full_mask = np.zeros(scan.to_volume().shape, dtype=bool)
     full_mask[bbox] = cmask
 
     # Use np.pad or manual boundary checks to ensure exactly cube_size
